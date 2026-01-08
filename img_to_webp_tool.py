@@ -41,17 +41,25 @@ while True:
     print(f"将输出 高度{new_height}、帧数{fps}、画质{quality} 的webp到 ./webp_output/ 目录下")
 
     # 遍历当前目录下的所有文件夹
-    for root, dirs, files in os.walk('.'):
+    current_dir = os.getcwd()
+
+    for root, dirs, files in os.walk(current_dir):
+        # os.walk 会递归进入 dirs 中的文件夹。过滤掉以 '.' 开头的隐藏文件夹（如 .Trash, .git, .ds_store 等）
+        dirs[:] = [d for d in dirs if not d.startswith('.')]
+
         for dir_name in dirs:
             image_folder = os.path.join(root, dir_name)
 
-            # 获取所有 PNG 图片文件名，并按数字顺序排序
-            image_files = sorted(
-                [f for f in os.listdir(image_folder) if f.endswith('.png')],
-                key=lambda x: int(os.path.splitext(x)[0])
-            )
+            # 过滤掉隐藏文件，防止读取到像 .DS_Store 这样非预期的文件
+            try:
+                image_files = sorted(
+                    [f for f in os.listdir(image_folder) if f.endswith('.png') and not f.startswith('.')],
+                    key=lambda x: int(os.path.splitext(x)[0])
+                )
+            except (ValueError, OSError):
+                # 防止文件名不是数字导致的 int() 转换失败，或者某些文件夹依然权限不足
+                continue
 
-            # 如果没有 PNG 文件，跳过该文件夹
             if not image_files:
                 continue
 
