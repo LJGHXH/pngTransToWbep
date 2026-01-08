@@ -1,12 +1,32 @@
-from PIL import Image
+import sys
 import os
+from PIL import Image
 
-# 输出目录
-output_base_folder = './webp_output/'
 
-# 如果输出目录不存在，则创建
+# ================= 路径兼容性修复 =================
+def get_resource_path():
+    if getattr(sys, 'frozen', False):
+        # 打包后的路径 (dist/main.app/Contents/MacOS/main)
+        exec_path = os.path.dirname(sys.executable)
+        if 'Contents/MacOS' in exec_path:
+            # 返回 .app 所在的那个文件夹路径
+            return os.path.dirname(os.path.dirname(os.path.dirname(exec_path)))
+        return exec_path
+    else:
+        # 源代码运行路径
+        return os.path.dirname(os.path.abspath(__file__))
+
+
+# 锁定当前工作目录，防止 macOS 默认指向根目录
+BASE_DIR = get_resource_path()
+os.chdir(BASE_DIR)
+
+# 输出目录设为绝对路径
+output_base_folder = os.path.join(BASE_DIR, 'webp_output')
+
 if not os.path.exists(output_base_folder):
     os.makedirs(output_base_folder)
+# =================================================
 
 print("import LAN\n")
 
@@ -23,71 +43,61 @@ print("""
 """)
 
 while True:
+    new_height, fps, quality = 756, 1, 75
+    args = input("参数：").strip()
 
-    # 默认值
-    new_height = 756
-    fps = 1
-    quality = 75
-    # 获取参数
-    args = input("参数：")
-    args = args.split(',')
-    if len(args) == 1:
-        args = args[0].split('，')
-    if len(args) == 3:
-        new_height = int(args[0])
-        fps = int(args[1])
-        quality = int(args[2])
+    if args:
+        try:
+            parts = args.replace('，', ',').split(',')
+            if len(parts) == 3:
+                new_height, fps, quality = map(int, parts)
+        except ValueError:
+            print("参数格式错误，将使用默认值。")
 
-    print(f"将输出 高度{new_height}、帧数{fps}、画质{quality} 的webp到 ./webp_output/ 目录下")
+    print(f"将输出到: {output_base_folder}")
 
-    # 遍历当前目录下的所有文件夹
-    current_dir = os.getcwd()
+    # 遍历当前目录，只看一级子文件夹，避免深入系统敏感目录
+    for dir_name in os.listdir(BASE_DIR):
+        image_folder = os.path.join(BASE_DIR, dir_name)
 
-    for root, dirs, files in os.walk(current_dir):
-        # os.walk 会递归进入 dirs 中的文件夹。过滤掉以 '.' 开头的隐藏文件夹（如 .Trash, .git, .ds_store 等）
-        dirs[:] = [d for d in dirs if not d.startswith('.')]
+        # 排除隐藏文件夹、输出文件夹和非文件夹对象
+        if not os.path.isdir(image_folder) or dir_name.startswith('.') or dir_name == 'webp_output':
+            continue
 
-        for dir_name in dirs:
-            image_folder = os.path.join(root, dir_name)
+        try:
+            # 过滤隐藏文件并排序
+            image_files = sorted(
+                [f for f in os.listdir(image_folder) if f.lower().endswith('.png') and not f.startswith('.')],
+                key=lambda x: int(os.path.splitext(x)[0])
+            )
+        except Exception as e:
+            print(f"跳过文件夹 {dir_name}: 文件名非数字或无权限 ({e})")
+            continue
 
-            # 过滤掉隐藏文件，防止读取到像 .DS_Store 这样非预期的文件
-            try:
-                image_files = sorted(
-                    [f for f in os.listdir(image_folder) if f.endswith('.png') and not f.startswith('.')],
-                    key=lambda x: int(os.path.splitext(x)[0])
-                )
-            except (ValueError, OSError):
-                # 防止文件名不是数字导致的 int() 转换失败，或者某些文件夹依然权限不足
-                continue
+        if not image_files:
+            continue
 
-            if not image_files:
-                continue
-
-            # 打开所有图片，调整大小，并存储在一个列表中
-            images = []
+        images = []
+        try:
             for file in image_files:
                 img_path = os.path.join(image_folder, file)
                 with Image.open(img_path).convert('RGBA') as img:
-                    # 获取原始尺寸
                     original_width, original_height = img.size
-                    # 计算新的宽度，保持宽高比
                     new_width = int(original_width * (new_height / original_height))
-                    # 调整大小
                     resized_img = img.resize((new_width, new_height), Image.LANCZOS)
                     images.append(resized_img)
 
-            # 输出文件路径，使用文件夹名称作为文件名
-            output_path = os.path.join(output_base_folder, f'{dir_name}.webp')
-
-            # 将图片保存为 WebP 动画
-            images[0].save(
-                output_path,
-                save_all=True,
-                append_images=images[1:],
-                duration=1000 // fps,  # 每帧的持续时间（毫秒），20帧每秒
-                loop=0,  # 无限循环
-                format='WEBP',
-                quality=quality
-            )
-
-            print(f"WebP 动画已保存到 {output_path}")
+            if images:
+                output_path = os.path.join(output_base_folder, f'{dir_name}.webp')
+                images[0].save(
+                    output_path,
+                    save_all=True,
+                    append_images=images[1:],
+                    duration=1000 // fps,
+                    loop=0,
+                    format='WEBP',
+                    quality=quality
+                )
+                print(f"✅ 成功生成: {output_path}")
+        except Exception as e:
+            print(f"❌ 处理 {dir_name} 时出错: {e}")
