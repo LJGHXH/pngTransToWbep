@@ -29,7 +29,14 @@ jobs:
       run: |
         # --onefile: 打包成单个文件
         # --windowed: 如果是 GUI 程序，不显示终端窗口
-        pyinstaller --onefile --windowed img_to_webp_tool.py
+        pip install Pillow  # 确保环境里有这个库
+        # 增加 --hidden-import 确保 PIL 被包含
+        pyinstaller --onefile \
+                    --hidden-import=PIL \
+                    --hidden-import=PIL._imagingtk \
+                    --hidden-import=PIL._tkinter_finder \
+                    --collect-submodules PIL \
+                    main.py
 
     - name: 上传成品
       uses: actions/upload-artifact@v4
